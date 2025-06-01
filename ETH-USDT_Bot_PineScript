@@ -219,7 +219,7 @@ if not na(longSignal)
 
 // === Short Entry and Stop Loss based on Confidence ===
 if not na(shortSignal)
-    //strategy.entry("Short", strategy.short)
+    strategy.entry("Short", strategy.short)
     stop_price = close * (1 + short_stop_loss_pct / 100)
     strategy.exit("Short SL", from_entry="Short", stop=stop_price)
     strategy.close("Long")
