@@ -1,0 +1,213 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © jshephard150
+
+//@version=6
+strategy("Machine Learning Strategy 3", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// === CONFIGURABLE VARIABLES ===
+long_stop_loss_pct = input.float(10, "Long Stop Loss %", minval=0.0)  // 15% default
+short_stop_loss_pct = input.float(10, "Short Stop Loss %", minval=0.0)  // 15% default
+long_confidence_threshold = input.int(2, "Long Confidence Threshold", minval=1, maxval=4)  // Set threshold for confidence in long/short
+Short_confidence_threshold = input.int(3, "Short Confidence Threshold", minval=1, maxval=4)  // Set threshold for confidence in long/short
+
+// === EMA Ribbon Inputs ===
+len1 = input(08, "EMA 1 Length")
+len2 = input(14, "EMA 2 Length")
+len3 = input(20, "EMA 3 Length")
+len4 = input(26, "EMA 4 Length")
+len5 = input(32, "EMA 5 Length")
+len6 = input(38, "EMA 6 Length")
+len7 = input(44, "EMA 7 Length")
+len8 = input(50, "EMA 8 Length")
+len0 = input(60, "Main EMA Length")
+
+ema1 = ta.ema(close, len1)
+ema2 = ta.ema(close, len2)
+ema3 = ta.ema(close, len3)
+ema4 = ta.ema(close, len4)
+ema5 = ta.ema(close, len5)
+ema6 = ta.ema(close, len6)
+ema7 = ta.ema(close, len7)
+ema8 = ta.ema(close, len8)
+ema0 = ta.ema(close, len0)
+
+// === Ribbon Color Logic ===
+is_ribbon_green = ema1 >= ema1[2] and ema2 >= ema2[2] and ema3 >= ema3[2] and ema4 >= ema4[2] and ema5 >= ema5[2] and ema6 >= ema6[2] and ema7 >= ema7[2] and ema8 >= ema8[2]
+is_ribbon_red   = ema1 < ema1[2] and ema2 < ema2[2] and ema3 < ema3[2] and ema4 < ema4[2] and ema5 < ema5[2] and ema6 < ema6[2] and ema7 < ema7[2] and ema8 < ema8[2]
+
+plot(ema1, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema2, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema3, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema4, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema5, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema6, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema7, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema8, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
+plot(ema0, color=ema0 >= ema0[2] ? color.lime : color.red, linewidth=3)
+
+// === SuperTrend and K-means Strategy ===
+import TradingView/ta/7
+atr_len = input.int(10, "ATR Length", group = "SuperTrend Settings")
+fact = input.float(3, "SuperTrend Factor", group = "SuperTrend Settings")
+training_data_period = input.int(100, "Training Data Length", group = "K-Means Settings")
+highvol = input.float(0.75, "Initial High volatility Percentile Guess", maxval = 1, group = "K-Means Settings", tooltip = "The initial guess of where the potential 'high volatility' area is, a value of 0.75 will take the 75th percentile of the range of ATR values over the training data period")
+midvol = input.float(0.5, "Initial Medium volatility Percentile Guess", maxval = 1, group = "K-Means Settings", tooltip = "The initial guess of where the potential 'medium volatility' area is, a value of 0.5 will take the 50th percentile of the range of ATR values over the training data period")
+lowvol = input.float(0.25, "Initial Low volatility Percentile Guess", maxval = 1, group = "K-Means Settings", tooltip = "The initial guess of where the potential 'low volatility' area is, a value of 0.25 will take the 25th percentile of the range of ATR values over the training data period")
+t1 = input.int(70, "Transparency 1", maxval = 100, minval = 0, group = "Appearance")
+t2 = input.int(95, "Transparency 2", maxval = 100, minval = 0, group = "Appearance")
+green = input.color(#00ffbb, "Bullish Color", group = "Appearance")
+red = input.color(#ff1100, "Bearish Color", group = "Appearance")
+
+pine_supertrend(factor, atr) =>
+    src = hl2
+    upperBand = src + factor * atr
+    lowerBand = src - factor * atr
+    prevLowerBand = nz(lowerBand[1])
+    prevUpperBand = nz(upperBand[1])
+
+    lowerBand := lowerBand > prevLowerBand or close[1] < prevLowerBand ? lowerBand : prevLowerBand
+    upperBand := upperBand < prevUpperBand or close[1] > prevUpperBand ? upperBand : prevUpperBand
+    int _direction = na
+    float superTrend = na
+    prevSuperTrend = superTrend[1]
+    if na(atr[1])
+        _direction := 1
+    else if prevSuperTrend == prevUpperBand
+        _direction := close > upperBand ? -1 : 1
+    else
+        _direction := close < lowerBand ? 1 : -1
+    superTrend := _direction == -1 ? lowerBand : upperBand
+    [superTrend, _direction]
+
+volatility = ta.atr(atr_len)
+
+upper = ta.highest(volatility, training_data_period)
+lower = ta.lowest(volatility, training_data_period)
+
+high_volatility = lower + (upper-lower) * highvol
+medium_volatility = lower + (upper-lower) * midvol
+low_volatility = lower + (upper-lower) * lowvol
+
+iterations = 0
+
+size_a = 0
+size_b = 0
+size_c = 0
+
+hv = array.new_float()
+mv = array.new_float()
+lv = array.new_float()
+amean = array.new_float(1,high_volatility)
+bmean = array.new_float(1,medium_volatility)
+cmean = array.new_float(1,low_volatility)
+
+if nz(volatility) > 0 and bar_index >= training_data_period-1
+
+    while ((amean.size() == 1 ? true : (amean.first() != amean.get(1))) or (bmean.size() == 1 ? true : (bmean.first() != bmean.get(1))) or (cmean.size() == 1 ? true : (cmean.first() != cmean.get(1))))
+        hv.clear()
+        mv.clear()
+        lv.clear()
+        for i = training_data_period-1 to 0
+            _1 = math.abs(volatility[i] - amean.first())
+            _2 = math.abs(volatility[i] - bmean.first())
+            _3 = math.abs(volatility[i] - cmean.first())
+            if _1 < _2 and _1 < _3
+                hv.unshift(volatility[i])
+
+            if _2 < _1 and _2 < _3
+                mv.unshift(volatility[i])
+
+            if _3 < _1 and _3 < _2
+                lv.unshift(volatility[i])
+        
+        amean.unshift(hv.avg())
+        bmean.unshift(mv.avg())
+        cmean.unshift(lv.avg())
+        size_a := hv.size()
+        size_b := mv.size()
+        size_c := lv.size()
+        iterations := iterations + 1
+
+hv_new = amean.first()
+mv_new = bmean.first()
+lv_new = cmean.first()
+vdist_a = math.abs(volatility - hv_new)
+vdist_b = math.abs(volatility - mv_new)
+vdist_c = math.abs(volatility - lv_new)
+
+distances = array.new_float()
+centroids = array.new_float()
+
+distances.push(vdist_a)
+distances.push(vdist_b)
+distances.push(vdist_c)
+
+centroids.push(hv_new)
+centroids.push(mv_new)
+centroids.push(lv_new)
+
+cluster = distances.indexof(distances.min()) // 0 for high, 1 for medium, 2 for low
+assigned_centroid = cluster == -1 ? na : centroids.get(cluster)
+
+[ST, dir] = pine_supertrend(fact, assigned_centroid)
+upTrend = plot(close > ST ? ST : na, color = color.new(green, t1), style = plot.style_linebr) //, force_overlay = true
+downTrend = plot(close < ST ? ST : na, color = color.new(red, t1), style = plot.style_linebr, force_overlay = false) //, force_overlay = true
+bodyMiddle = plot(barstate.isfirst ? na : (open + close) / 2, "Body Middle",display = display.none)
+
+fill(bodyMiddle, upTrend, (open + close) / 2, ST, color.new(green, t2), color.new(green, t1))
+fill(bodyMiddle, downTrend, ST, (open + close) / 2, color.new(red, t1), color.new(red, t2))
+
+plotshape(ta.crossunder(dir, 0) ? ST : na, "Bullish Trend", shape.labelup, location.absolute, green, text = "▲", textcolor = chart.fg_color, size = size.small)
+plotshape(ta.crossover(dir, 0) ? ST : na, "Bearish Trend", shape.labeldown, location.absolute, red, text = "▼", textcolor = chart.fg_color, size = size.small)
+
+label.new(bar_index, dir > 0 ? ST + ta.atr(7) : ST - ta.atr(7), text = str.tostring(4 - (cluster + 1)), style = label.style_none, textcolor = color.from_gradient(cluster + 1, 1, 3, color.new(dir > 0 ? red : green, 30), color.new(dir > 0 ? red : green, 90)))
+
+// === SuperTrend State ===
+var int supertrend_signal = na
+if dir == 1
+    supertrend_signal := 1
+else if dir == -1
+    supertrend_signal := 0
+
+// Trend Check on Multiple Timeframes
+get_trend(timeframe) =>
+    atr_val = ta.atr(atr_len)
+    [superTrend, dir] = request.security(syminfo.tickerid, timeframe, pine_supertrend(fact, atr_val))
+    trend = dir == 1 ? true : false  // Fix: Return true or false, no na
+    trend
+
+// === Trend on 1 month, 1 week, 1 day, 1 hour ===
+trend_month = get_trend("M")        // 1 month timeframe
+trend_week = get_trend("W")         // 1 week timeframe
+trend_day = get_trend("D")          // 1 day timeframe
+trend_hour = get_trend("60")        // 1 hour timeframe
+
+// === Count Bullish and Bearish Indicators ===
+bullish_count = (trend_month ? 1 : 0) + (trend_week ? 1 : 0) + (trend_day ? 1 : 0) + (trend_hour ? 1 : 0)
+bearish_count = (not trend_month ? 1 : 0) + (not trend_week ? 1 : 0) + (not trend_day ? 1 : 0) + (not trend_hour ? 1 : 0)
+
+// Display the counts
+label.new(bar_index, high, text="Bullish Count: " + str.tostring(bullish_count), style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
+label.new(bar_index, low, text="Bearish Count: " + str.tostring(bearish_count), style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
+
+// === Overall Confidence Logic ===
+long_confidence = (is_ribbon_green and bullish_count >= long_confidence_threshold and trend_hour == true)
+short_confidence = (is_ribbon_red and bearish_count >= Short_confidence_threshold and trend_hour == false)
+
+// === Signals with EMA Filter and Confidence Check ===
+longSignal  = long_confidence
+shortSignal = short_confidence
+
+// === Long Entry and Stop Loss based on Confidence ===
+if longSignal
+    strategy.entry("Long", strategy.long)
+    stop_price = close * (1 - long_stop_loss_pct / 100)
+    strategy.exit("Long SL", from_entry="Long", stop=stop_price)
+    strategy.close("Short")
+
+// === Short Entry based on Confidence ===
+if shortSignal
+    strategy.entry("Short", strategy.short)
+    stop_price = close * (1 + short_stop_loss_pct / 100)
+    strategy.exit("Short SL", from_entry ="Short", stop=stop_price)
+    strategy.close("Long")
