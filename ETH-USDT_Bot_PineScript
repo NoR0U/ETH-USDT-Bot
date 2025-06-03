@@ -5,13 +5,13 @@
 strategy("Machine Learning Strategy 7", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
 
 // === CONFIGURABLE VARIABLES ===
-long_stop_loss_pct = input.float(1, "Long Stop Loss %", minval=0.0)  // 15% default
+long_stop_loss_pct = input.float(2, "Long Stop Loss %", minval=0.0)  // 15% default
 short_stop_loss_pct = input.float(5, "Short Stop Loss %", minval=0.0)  // 15% default
-long_confidence_threshold = input.int(2, "Long Confidence Threshold", minval=1, maxval=4)  // Set threshold for confidence in long/short
-Short_confidence_threshold = input.int(3, "Short Confidence Threshold", minval=1, maxval=4)  // Set threshold for confidence in long/short
+long_confidence_threshold = input.int(5, "Long Confidence Threshold", minval=1, maxval=10)  // Set threshold for confidence in long/short
+Short_confidence_threshold = input.int(5, "Short Confidence Threshold", minval=1, maxval=10)  // Set threshold for confidence in long/short
 
 // === EMA Ribbon Inputs ===
-len1 = input(05, "EMA 1 Length")
+len1 = input(5, "EMA 1 Length")
 len2 = input(10, "EMA 2 Length")
 len3 = input(15, "EMA 3 Length")
 len4 = input(20, "EMA 4 Length")
@@ -35,6 +35,7 @@ ema0 = ta.ema(close, len0)
 is_ribbon_green = ema1 >= ema1[2] and ema2 >= ema2[2] and ema3 >= ema3[2] and ema4 >= ema4[2] and ema5 >= ema5[2] and ema6 >= ema6[2] and ema7 >= ema7[2] and ema8 >= ema8[2]
 is_ribbon_red   = ema1 < ema1[2] and ema2 < ema2[2] and ema3 < ema3[2] and ema4 < ema4[2] and ema5 < ema5[2] and ema6 < ema6[2] and ema7 < ema7[2] and ema8 < ema8[2]
 
+// === Plot EMA Ribbon ===
 plot(ema1, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
 plot(ema2, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
 plot(ema3, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
@@ -44,6 +45,36 @@ plot(ema6, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, 
 plot(ema7, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
 plot(ema8, color=is_ribbon_green ? color.blue : is_ribbon_red ? color.red : na, linewidth=1)
 plot(ema0, color=ema0 >= ema0[2] ? color.lime : color.red, linewidth=3)
+
+// === Calculate EMA Distance ===
+emaArray = array.new_float(8)
+array.set(emaArray, 0, ema1)
+array.set(emaArray, 1, ema2)
+array.set(emaArray, 2, ema3)
+array.set(emaArray, 3, ema4)
+array.set(emaArray, 4, ema5)
+array.set(emaArray, 5, ema6)
+array.set(emaArray, 6, ema7)
+array.set(emaArray, 7, ema8)
+
+
+// === Calculate EMA Ribbon Distance ===
+ema_max = math.max(math.max(math.max(ema1, ema2), math.max(ema3, ema4)), math.max(math.max(ema5, ema6), math.max(ema7, ema8)))
+ema_min = math.min(math.min(math.min(ema1, ema2), math.min(ema3, ema4)), math.min(math.min(ema5, ema6), math.min(ema7, ema8)))
+ema_distance = ema_max - ema_min
+
+// === Expansion/Contraction Check ===
+is_expanding = ema_distance > ema_distance[1]
+is_contracting = ema_distance < ema_distance[1]
+
+// === User-Configurable Filters ===
+ema_dist_threshold = input.float(0.5, "Min EMA Ribbon Distance", step=1)
+use_expansion_filter_long = input.bool(true, "Require Expansion for Long")
+use_expansion_filter_short = input.bool(true, "Require Expansion for Short")
+
+
+// Optional: Plot distance as histogram or label
+plot(ema_distance, title="EMA Ribbon Spread", color=color.orange, linewidth=2, style=plot.style_columns)
 
 // === SuperTrend and K-means Strategy ===
 import TradingView/ta/7
@@ -162,6 +193,27 @@ plotshape(ta.crossover(dir, 0) ? ST : na, "Bearish Trend", shape.labeldown, loca
 
 //label.new(bar_index, dir > 0 ? ST + ta.atr(7) : ST - ta.atr(7), text = str.tostring(4 - (cluster + 1)), style = label.style_none, textcolor = color.from_gradient(cluster + 1, 1, 3, color.new(dir > 0 ? red : green, 30), color.new(dir > 0 ? red : green, 90)))
 
+// Trend Check on Multiple Timeframes
+get_trend(timeframe) =>
+    atr_val = ta.atr(atr_len)
+    [superTrend, dir] = request.security(syminfo.tickerid, timeframe, pine_supertrend(fact, atr_val))
+    trend = dir == 1 ? true : false  // Fix: Return true or false, no na
+    trend
+
+// === Trend on 1 month, 1 week, 1 day, 1 hour ===
+trend_month = get_trend("30")        // 1 month timeframe
+trend_week = get_trend("15")         // 1 week timeframe
+trend_day = get_trend("10")          // 1 day timeframe
+trend_hour = get_trend("5")        // 1 hour timeframe
+
+// === Count Bullish and Bearish Indicators ===
+bullish_count = (trend_month ? 1 : 0) + (trend_week ? 1 : 0) + (trend_day ? 1 : 0) + (trend_hour ? 1 : 0)
+bearish_count = (not trend_month ? 1 : 0) + (not trend_week ? 1 : 0) + (not trend_day ? 1 : 0) + (not trend_hour ? 1 : 0)
+
+// Display the counts
+//label.new(bar_index, high, text="Bullish Count: " + str.tostring(bullish_count), style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
+//label.new(bar_index, low, text="Bearish Count: " + str.tostring(bearish_count), style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
+
 // === SuperTrend State ===
 var int supertrend_signal = na
 var int EMA_state = na 
@@ -180,31 +232,12 @@ else if dir == -1
 else 
     supertrend_signal := 0
 
-// Trend Check on Multiple Timeframes
-get_trend(timeframe) =>
-    atr_val = ta.atr(atr_len)
-    [superTrend, dir] = request.security(syminfo.tickerid, timeframe, pine_supertrend(fact, atr_val))
-    trend = dir == 1 ? true : false  // Fix: Return true or false, no na
-    trend
+// === Confidence Filters
+long_filter_pass = ema_distance > ema_dist_threshold and (use_expansion_filter_long ? is_expanding : true)
+//short_filter_pass = ema_distance > ema_dist_threshold and (use_expansion_filter_short ? is_expanding : true)
 
-// === Trend on 1 month, 1 week, 1 day, 1 hour ===
-trend_month = get_trend("M")        // 1 month timeframe
-trend_week = get_trend("W")         // 1 week timeframe
-trend_day = get_trend("D")          // 1 day timeframe
-trend_hour = get_trend("60")        // 1 hour timeframe
-
-// === Count Bullish and Bearish Indicators ===
-bullish_count = (trend_month ? 1 : 0) + (trend_week ? 1 : 0) + (trend_day ? 1 : 0) + (trend_hour ? 1 : 0)
-bearish_count = (not trend_month ? 1 : 0) + (not trend_week ? 1 : 0) + (not trend_day ? 1 : 0) + (not trend_hour ? 1 : 0)
-
-// Display the counts
-label.new(bar_index, high, text="Bullish Count: " + str.tostring(bullish_count), style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
-label.new(bar_index, low, text="Bearish Count: " + str.tostring(bearish_count), style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
-
-// === Overall Confidence Logic ===
-// Fixed negative divisor, fixed capitalization
-long_confidence  = (EMA_state + supertrend_signal + (bullish_count / 4)) >= 2
-short_confidence = (EMA_state + supertrend_signal + (bearish_count / -4)) <= -2
+long_confidence  = long_filter_pass and (((EMA_state * 20) + (supertrend_signal * 46) + ((bullish_count / 4)) * 33) >= 50)
+short_confidence = (((EMA_state * 20) + (supertrend_signal * 46) + ((bearish_count / -4)) * 33) <= -80)
 
 // === Signals with EMA Filter and Confidence Check ===
 longSignal  = long_confidence ? 1 : na
